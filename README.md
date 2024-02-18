@@ -22,45 +22,72 @@ The following diagram depicts a high-level architecture of this solution.
 
 ## Setup
 ### Request Access To Model
+To implement the solution, you should have an AWS account and access to Amazon Bedrock with agents enabled (currently in preview).
+1. Navigate to [Model Access](https://us-east-1.console.aws.amazon.com/bedrock/home?region=us-east-1#/modelaccess) page in **Amazon Bedrock Console**. Select **Manage model access**.
+2. Select the checkboxes next to the models you want to add access to. To request access to all models belonging to a provider, select the check box next to the provider. In this lab, we need to have access to models from Anthropic
+![Model Access](/images/model_access.png)
+3. Select **Save changes** to request access. The changes may take several minutes to take place.
+4. If your request is successful, the **Access status** changes to **Access granted**
 
 ### Deploy Cloud Formation
+1. Use AWS CloudFormation template to create the resource stack required for the solution.
+
+|             |                                          |
+| :---------- | :--------------------------------------: |
+| `us-east-1` | [<img src="./images/cfn-launch-stack.png">](https://us-east-1.console.aws.amazon.com/cloudformation/home?region=us-east-1#/stacks/create?stackName=agents-csbot-stack&templateURL=https://aws-blogs-artifacts-public.s3.amazonaws.com/artifacts/ML-15539/template.yml) |
+
+2. Keep clicking **Next** and tick the box **I acknowledge that AWS CloudFormation might create IAM resources with custom names.**. 
+
+3. Click **Submit** to deploy Cloud Formation stack 
+
+4. The CloudFormation template creates two IAM roles. Update these roles to apply least-privilege permissions as discussed in [Security best practices](https://docs.aws.amazon.com/IAM/latest/UserGuide/best-practices.html#grant-least-privilege). Click [here](https://docs.aws.amazon.com/bedrock/latest/userguide/security_iam_service-with-iam-agent.html) to learn what IAM features are available to use with agents for Amazon Bedrock.
+- `LambdaBasicExecutionRole` with S3 full access and CloudWatch access for logging.
+- `AmazonBedrockExecutionRoleForAgents` with S3 full access and Lambda full access. 
+**Important:** Agents for Amazon Bedrock requires the role name to be prefixed by `AmazonBedrockExecutionRoleForAgents_*`
+
+### Bedrock Agents Set Up 
+To create an agent, open the [Amazon Bedrock console](https://console.aws.amazon.com/bedrock/home) and choose **Agents** in the left navigation pane. Then select **Create Agent**.
+![](./images/agents-menu.png)
+
+This starts the agent creation workflow.
+1.	**Provide agent details:** Give the agent a name and description (optional). Select the service role created by the CloudFormation stack and select **Next**.
+
+![](./images/agent-details.png)
+2.	**Select a foundation model:** In the **Select model** screen, you select a model. Provide clear and precise instructions to the agent about what tasks to perform and how to interact with the users.
+![](./images/agent-model.png)
+3.	**Add action groups:** An action is a task the agent can perform by making API calls. A set of actions comprise an action group. You provide an API schema that defines all the APIs in the action group. You must provide an API schema in the [OpenAPI schema](https://swagger.io/specification/) JSON format. The Lambda function contains the business logic needed to perform API calls. You must associate a Lambda function to each action group.
+
+Give the action group a name and a description for the action. Select the Lambda function, provide an API schema file and select **Next**.
+![](./images/agent-action-groups.png)
+4.	In the final step, review the agent configuration and select **Create Agent**.
+
+#### Test/Deploy agents for Amazon Bedrock
+1.	**Test the agent:** After the agent is created, a dialog box shows the agent overview along with a working draft. The Amazon Bedrock console provides a UI to test your agent.
+![](./images/agent-test.png)
+2.	**Deploy:** After successful testing, you can deploy your agent. To deploy an agent in your application, you must create an alias. Amazon Bedrock then automatically creates a version for that alias.
+![](./images/agent-alias.png)
+The following actions occur with the preceding agent setup and the Lambda code provided with this post:
+
+1.	The agent creates a prompt from the developer-provided instructions (such as “You are an agent that helps customers purchase shoes.”), API schemas needed to complete the tasks, and data source details. The automatic prompt creation saves weeks of experimenting with prompts for different FMs. 
+
+2.	The agent orchestrates the user-requested task, such as “I am looking for shoes,” by breaking it into smaller subtasks such as getting customer details, matching the customer-preferred activity with shoe activity, and placing shoe orders. The agent determines the right sequence of tasks and handles error scenarios along the way.
+
+The following screenshot displays some example responses from the agent.
 
 
+![](./images/agent-response.png)
 
-## Lab
-### Fine-tuning an LLM
-In this section we will use Amazon SageMaker to run an LLM fine-tuning job using the Hugging Face Optimum Neuron library and an AWS EC2 trn1.2xlarge instance (featuring Trainium accelerators).
 
-ℹ️  Navigate to the notebook folder /01_finetuning/ and launch the Finetune-TinyLlama-1.1B.ipynb notebook.
+By selecting **Show trace** for each of response, a dialog box shows the reasoning technique used by the agent and the final response generated by the FM.
 
-Please refer to the above-mentioned Jupyter notebook and run each of the notebook cells in order to complete this lab module. The following content is provided as reference material which may help you as you work through the notebook.
 
-#### AWS Trainium
-[AWS Trainium](https://aws.amazon.com/machine-learning/trainium/) is the second-generation machine learning (ML) accelerator that AWS purpose built for deep learning training of 100B+ parameter models. Each Amazon Elastic Compute Cloud (EC2) Trn1 instance deploys up to 16 AWS Trainium accelerators to deliver a high-performance, low-cost solution for deep learning (DL) training in the cloud. Although the use of deep learning is accelerating, many development teams are limited by fixed budgets, which puts a cap on the scope and frequency of training needed to improve their models and applications. Trainium based EC2 Trn1 instances solve this challenge by delivering faster time to train while offering up to 50% cost-to-train savings over comparable Amazon EC2 instances.
+![](./images/agent-trace1.png)
 
-In this lab you will work with a single trn1.2xlarge instance containing a single Trainium accelerator with 2 NeuronCores. While the trn1.2xlarge instance is useful for fine-tuning, AWS also offers larger trn1.32xlarge and trn1n.32xlarge instance types that each contain 16 Trainium accelerators (32 NeuronCores) and are capable of large-scale distributed training.
 
-#### Hugging Face Optimum Neuron
-[Optimum Neuron](https://huggingface.co/docs/optimum-neuron) is a Python library providing the interface between Hugging Face Transformers and the purpose-built AWS ML accelerators - Trainium and Inferentia. Optimum Neuron provides a set of tools enabling easy model loading, training, and inference on single and multi-accelerator settings for different downstream tasks. The goal of this library is to provide an easy-to-use mechanism for users to leverage the most popular Hugging Face models on Trainium and Inferentia, using familiar Transformers concepts such as the Trainer API. 
+![](./images/agent-trace2.png)
 
-### Deploying a fine-tuned LLM for inference
-In this section we will use Amazon SageMaker and Amazon EC２ Inf２ instance to deploy the model fine-tuned in the previous section. Amazon SageMaker deployment provides fully managed options for deploying our models using Real Time or Batch modes. AWS Inferentia gives best cost per inference.
 
-ℹ️   Navigate to the notebook folder /02_inference/ and launch Inference-TinyLlama-1.1B.ipynb notebook.
-
-Please refer to the above-mentioned Jupyter notebook and run each of the notebook cells in order to complete this lab module. The following content is provided as reference material which may help you as you work through the notebook.
-
-#### Inferentia2
-[AWS Inferentia2](https://aws.amazon.com/machine-learning/inferentia) is the second generation purpose built Machine Learning inference accelerator from AWS. Amazon EC2 Inf2 instances are powered by AWS Inferentia2. Inf2 instances raise the performance of Inf1 by delivering 3x higher compute performance, 4x larger total accelerator memory, up to 4x higher throughput, and up to 10x lower latency. Inf2 instances are the first inference-optimized instances in Amazon EC2 to support scale-out distributed inference with ultra-high-speed connectivity between accelerators. You can now efficiently and cost-effectively deploy models with hundreds of billions of parameters across multiple accelerators on Inf2 instances.
-
-In this lab you will work with a single inf2.xlarge instance containing a single Inferentia2 accelerator with 2 NeuronCores. While the inf2.xlarge instance is useful for most cost-optimized inference, AWS also offers larger inf2.48xlarge and inf2.24xlarge instance types that each contain 12 and 6 Inferentia2 accelerators (24 and 12 NeuronCores) and are capable of more performance optimized inference. 
-
-## Summary
-Now that you have completed the session, you should have an understanding of:
-- Using Optimum Neuron to streamline the fine-tuning of LLMs with AWS Trainium
-- Launching an LLM fine-tuning job using SageMaker Training and storing your fine-tuned model in Amazon S3
-- Preparing your model for deployment on AWS Inferentia using transformers-neuronx
-- Deploying your model on a SageMaker Hosting endpoint using DJL Serving
+![](./images/agent-trace3.png)
 
 ## **Clean Up**
 1. Return to the AWS Console, and search for Amazon SageMaker to launch the SageMaker console. In the left-hand menu, choose **Training -> Training jobs**. If any training jobs show a status of Running, please select the jobs and choose **Action -> Stop**to stop the jobs. Repeat this step for any additional regions that you used during the lab.
